@@ -20,6 +20,7 @@
   import FolderAsk from './FolderAsk.svelte';
   import FolderWarning from './FolderWarning.svelte';
   import { call } from './api.ts';
+  import { withActCheck } from './act-check.svelte.ts';
   import { AWS_GUIDES, siteLink } from '../site.ts';
   import { ago, when } from './format.ts';
   import { openFile, openProject, wins } from './windows.svelte.ts';
@@ -202,12 +203,17 @@
   const decide = (a: AskRow, decision: 'approve' | 'deny' | 'iterate') =>
     act(async () => {
       const picks = a.plan?.items.map((_, i) => i).filter((i) => !skip[i]);
-      const r = await call<{ hires?: AskRow[]; task?: TaskRow | null }>(`/api/asks/${a.id}`, {
-        decision,
-        reason,
-        report: reportWhenDone,
-        picks
-      });
+      const send = () =>
+        call<{ hires?: AskRow[]; task?: TaskRow | null }>(`/api/asks/${a.id}`, {
+          decision,
+          reason,
+          report: reportWhenDone,
+          picks
+        });
+      // Raise to Act waits for the owner's Act check, the first time only.
+      const raisesToAct = decision === 'approve' && a.kind === 'level' && a.level === 'act';
+      const r = raisesToAct ? await withActCheck(send) : await send();
+      if (!r) return;
       if (r.hires?.length) onplan(r.hires);
       // An approved access ask turns into the connect task it made, in place.
       if (r.task) made = r.task;

@@ -246,7 +246,8 @@ pieces under 3,900 bytes a line, so no value is on a command line.
    Settings tab does. A `level` ask (an Odd's `ask_for_level`) takes Raise to
    and the level it names ("Raise to Act"), and an `office_tool` ask (an
    Odd's `ask_for_office_tool`) takes Turn on; each approves it and makes the
-   Settings tab's own change for that Odd in one step. A `standing` ask (an
+   Settings tab's own change for that Odd in one step. Raise to Act shows the
+   Act check first, until the owner passed it (below). A `standing` ask (an
    Odd's `ask_for_standing_yes`) takes Allow or Deny and no Iterate, and Allow
    puts the tools on the grant. Each kind's yes button words live in
    `src/lib/ui/yes-said.ts` (`YES_SAID`), which the Desk imports and
@@ -584,6 +585,22 @@ pieces under 3,900 bytes a line, so no value is on a command line.
    `setEffort`). Every run passes it: Claude Code's `--effort`, Codex's
    `model_reasoning_effort`, Grok's `--reasoning-effort`, so no Odd takes the
    owner's own Claude Code setting or a tool's default.
+   The Act check: before the owner puts any Odd at Act for the first time,
+   the page shows three true or false statements in a modal over the whole
+   page (`ActCheck.svelte`, a `<dialog>` opened with `showModal`). Escape or
+   Cancel changes nothing. The office checks the answers (POST
+   `/api/act-check`, `passActCheck` in the ledger; the words and right
+   answers live only in the ledger's `act-check.ts`), keeps the pass once in
+   `owner.act_check_at` with one ledger line, "Passed the Act check", and
+   then the raise goes ahead. A wrong answer shows why under it and keeps
+   the answers. Each owner action that puts an Odd at Act goes through
+   `withActCheck` (`act-check.svelte.ts`): the level button "Acts on its
+   own", a level ask's Raise to Act and a hire at Act. The page knows from
+   `actChecked` in its load, and a 409 from the office (`ACT_CHECK_NEEDED`)
+   opens it too. The office refuses Act until the pass whatever sends it:
+   `changeLevel` and `hire` throw `ActCheckNeeded`, so a level ask's yes
+   leaves the ask open. Read and Draft never need it, and an Odd already at
+   Act stays there. No Odd's prompt or tool sees the check.
    The Settings tab has four tabs, Model first, then Office, Folders and
    Services, each an icon and a word, the icon alone when the bar is under
    22rem (a container query). Office, Folders and Services each have a search
@@ -1165,7 +1182,7 @@ pieces under 3,900 bytes a line, so no value is on a command line.
     whose tool draws looks (`drawsLooks`, `/api/agents`) also offer drawing. The onboarding manager card offers the same, as "Build your own".
     Nobody is hired without a kept look; in the hire window a look built from parts is kept as it lands (`autoKeep` on `LookStudio`), so Next is the one click, and name and role share a line. While it draws,
     `src/lib/ui/PixelDrawing.svelte` paints a bust pixel by pixel beside the
-    stage and the time. Step three picks the level. Step four, Model, picks
+    stage and the time. Step three picks the level; a hire at Act shows the Act check first, until it is passed. Step four, Model, picks
     what its runs go through the way an Odd's Model tab does: the tool, the
     account it signs in with, the model and how hard it thinks, each the
     office's unless the owner picks another (item 9).

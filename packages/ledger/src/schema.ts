@@ -1036,6 +1036,11 @@ export const owner = pgTable('owner', {
    * Project sessions, which run outside Oddboro's limits, exist only while it is on.
    */
   advancedAt: at('advanced_at'),
+  /**
+   * When the owner passed the Act check (act-check.ts). Null until then, and
+   * while null nothing puts an Odd at Act (`changeLevel`, `hire`).
+   */
+  actCheckAt: at('act_check_at'),
   updatedAt: at('updated_at').notNull().defaultNow()
 });
 

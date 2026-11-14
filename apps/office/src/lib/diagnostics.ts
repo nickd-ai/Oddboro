@@ -115,6 +115,7 @@ export const ROUTE_IDS = {
   '/account/callback': true,
   '/api/account': true,
   '/api/accounts': true,
+  '/api/act-check': true,
   '/api/agents': true,
   '/api/agents/[tool]': true,
   '/api/asks/[id]': true,

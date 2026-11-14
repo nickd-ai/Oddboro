@@ -6,7 +6,8 @@ import { db } from './db.ts';
 import { fixedError } from './errors.ts';
 import { chatSession } from './home.ts';
 import { type Db } from './threads.ts';
-import { staff, parts } from './schema.ts';
+import { owner, staff, parts } from './schema.ts';
+import { ACT_CHECK_NEEDED, wrongAnswers } from './act-check.ts';
 import {
   AGENT_NAMES,
   commandsHow,
@@ -67,7 +68,51 @@ export async function formerStaff(): Promise<StaffRow[]> {
   return db.select().from(staff).where(isNotNull(staff.leftAt)).orderBy(desc(staff.leftAt));
 }
 
-/** Only the owner moves a staffer's level. Grants above the new level wait until it rises again. */
+/**
+ * Something tried to put an Odd at Act before the owner passed the Act check
+ * (act-check.ts). The routes answer it with 409 and its message, and the page
+ * shows the check.
+ */
+export class ActCheckNeeded extends Error {
+  constructor() {
+    super(ACT_CHECK_NEEDED);
+  }
+}
+
+/** Whether the owner passed the Act check. Once passed, it stays passed. */
+export async function actCheckPassed(q: Db = db): Promise<boolean> {
+  const [row] = await q.select({ at: owner.actCheckAt }).from(owner).where(eq(owner.id, 'owner'));
+  return !!row?.at;
+}
+
+/** Refuses putting an Odd at Act until the owner passed the Act check. */
+async function needActCheck(q: Db, permission: Level): Promise<void> {
+  if (permission === 'act' && !(await actCheckPassed(q))) throw new ActCheckNeeded();
+}
+
+/**
+ * The owner's answers to the Act check, checked here, not on the page. All
+ * right: the pass is kept with its time, once, with one ledger line. Any
+ * wrong: nothing changes, and the positions of the wrong ones come back.
+ */
+export async function passActCheck(answers: unknown): Promise<{ wrong: number[] }> {
+  const wrong = wrongAnswers(answers);
+  if (!wrong) throw fixedError('Answer each of the three with true or false');
+  if (wrong.length) return { wrong };
+  const [first] = await db
+    .update(owner)
+    .set({ actCheckAt: new Date() })
+    .where(and(eq(owner.id, 'owner'), isNull(owner.actCheckAt)))
+    .returning({ id: owner.id });
+  if (first) await record({ kind: 'decision', actor: 'owner', title: 'Passed the Act check' });
+  else if (!(await actCheckPassed())) throw fixedError('Finish the welcome first.');
+  return { wrong };
+}
+
+/**
+ * Only the owner moves a staffer's level. Grants above the new level wait
+ * until it rises again. Act waits for the Act check (`ActCheckNeeded`).
+ */
 export async function setPermission(id: string, permission: Level): Promise<void> {
   const done = await changeLevel(db, id, permission);
   if (done) await record({ kind: 'access', actor: 'owner', title: done.title });
@@ -75,7 +120,9 @@ export async function setPermission(id: string, permission: Level): Promise<void
 
 /**
  * The change `setPermission` makes, in `q`, with the ledger title it is
- * written under. Nothing when the Odd is gone or already at that level.
+ * written under. Nothing when the Odd is gone or already at that level. A
+ * move up to Act throws `ActCheckNeeded` until the owner passed the Act check,
+ * so the Settings tab and a level ask's yes both wait for it.
  */
 async function changeLevel(
   q: Db,
@@ -84,6 +131,7 @@ async function changeLevel(
 ): Promise<{ title: string } | undefined> {
   const before = await staffer(id, q);
   if (!before || before.permission === permission) return;
+  await needActCheck(q, permission);
   await q.update(staff).set({ permission }).where(eq(staff.id, id));
   const up = !levelAtMost(permission, before.permission);
   return {
@@ -423,7 +471,9 @@ export async function setLook(
   await record({ kind: 'work', actor: 'owner', title: `Redrew ${who.name}'s look` });
 }
 
+/** Hire an Odd. A hire at Act waits for the Act check (`ActCheckNeeded`). */
 export async function hire(h: Hire): Promise<StaffRow> {
+  await needActCheck(db, h.permission ?? HIRE_DEFAULTS.staff.permission);
   const base =
     h.name
       .toLowerCase()

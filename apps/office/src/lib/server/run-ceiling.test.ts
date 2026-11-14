@@ -11,6 +11,10 @@ import { test } from 'node:test';
 import type { Level } from '@oddboro/ledger';
 import { L, chatOf, gave, odd, runOf, startedBy, type Gave } from './office-under-test.ts';
 
+// The owner passed the Act check (the ledger's act-check.test.ts), so a yes to
+// Act goes through. Their name stays as it was.
+await L.pg`insert into owner (name, act_check_at) values ('', now())
+  on conflict (id) do update set act_check_at = now()`;
 const owner = await L.ownerName();
 const said = { title: 'Do the thing', why: 'w', ifApproved: 'i' };
 const gmailAtAct = { connector: 'gmail', level: 'act' as const };

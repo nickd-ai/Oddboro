@@ -11,7 +11,7 @@ import { beforeEach, test } from 'node:test';
 import type { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { db, sql, toolServer } from './tool-server.ts';
 
-const { asks, followUps, ledger, staff } = await import('../src/schema.ts');
+const { asks, followUps, ledger, owner, staff } = await import('../src/schema.ts');
 const { eq } = await import('drizzle-orm');
 const O = await import('../src/office.ts');
 const { setPermission, setTool } = O;
@@ -30,6 +30,9 @@ const odd = (id: string, name: string, more: Partial<typeof staff.$inferInsert> 
   desk: `You are ${name}.`,
   ...more
 });
+// The owner passed the Act check (act-check.test.ts), so a raise to Act goes
+// through. No name, so the owner is still "the owner".
+await db.insert(owner).values({ name: '', actCheckAt: new Date() });
 await db
   .insert(staff)
   .values([
