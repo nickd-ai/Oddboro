@@ -93,6 +93,10 @@ export const OWNER_ACTIONS = {
   'POST /api/asks/[id]/filter': { records: 'decision' },
   'POST /api/asks/[id]/folder': { records: 'decision' },
   'POST /api/asks/[id]/reply': { records: 'decision' },
+  'POST /api/browser-link': {
+    notAnAction:
+      "Makes a one-time link for the owner's browser, kept in memory for a minute; no record changes."
+  },
   'PUT /api/files': { records: 'work' },
   'POST /api/files/open': {
     notAnAction: 'Opens a page the Odd built in the browser; it changes nothing.'
@@ -105,7 +109,7 @@ export const OWNER_ACTIONS = {
   // An Odd's run reaching its outside tools, with the token the office gave
   // that run (gateway.ts). From the owner's page it answers 401 and changes
   // nothing; what a run's call there changes, the office records itself
-  // (`narrowReadTools`).
+  // (`refreshTools`).
   'POST /api/gateway/[connector]': { notAnAction: "Only an Odd's run reaches it." },
   'DELETE /api/gateway/[connector]': { notAnAction: "Only an Odd's run reaches it." },
   'POST /api/goals': { records: 'decision' },
@@ -162,6 +166,11 @@ export const OWNER_ACTIONS = {
   'PUT /api/setup/advanced': { records: 'decision' },
   'PATCH /api/services/[id]': { records: 'access' },
   'POST /api/services/[id]': { none: NO_ROW },
+  // The owner's Refresh (`refreshTools`).
+  'POST /api/services/[id]/tools': {
+    mayRecord: ['access'],
+    when: 'A row for each change the service made to its tools since the office last read them: tools added or dropped, Read only reaching more or fewer, and each Odd that lost a standing yes. Nothing when only a description changed, or nothing did.'
+  },
   'POST /api/staff': { records: 'hire' },
   // The owner's Remove (`removeOdd`).
   'DELETE /api/staff/[id]': {

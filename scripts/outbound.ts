@@ -155,7 +155,7 @@ export const OUTBOUND: readonly Outbound[] = [
     calls: 1,
     to: "New Altitude's relay for reports, or the owner's own Sentry when a build from source names one.",
     sends:
-      'Error and trace reports from the server, carrying only what `diagnostics.ts` lets through (no chats, no work and no family data), with the New Altitude sign-in on those to the relay.',
+      "Error and trace reports from the server, carrying only what `diagnostics.ts` lets through (no chats, no Odds' work and nothing from the owner's files), with the New Altitude sign-in on those to the relay.",
     yes: "The owner's Diagnostics switch in Setup. With no answer, nothing is sent."
   },
   {
@@ -186,6 +186,13 @@ export const OUTBOUND: readonly Outbound[] = [
     to: 'Ollama at OLLAMA_URL, this computer unless the owner points it elsewhere.',
     sends: 'Text written to the ledger, or searched for, to turn it into a vector.',
     yes: 'The owner, who sets OLLAMA_URL; with it unset nothing leaves this computer.'
+  },
+  {
+    file: 'packages/ledger/src/local-db.ts',
+    calls: 1,
+    to: "The office's own database socket, in the office home on this computer.",
+    sends: 'Nothing: it only opens a connection, to learn whether another office answers there.',
+    yes: 'None needed: nothing leaves this computer, and it carries no data.'
   },
   {
     file: 'packages/ledger/src/office-access.ts',

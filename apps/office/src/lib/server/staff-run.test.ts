@@ -22,12 +22,13 @@ import {
   symlinkSync,
   writeFileSync
 } from 'node:fs';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { homedir } from 'node:os';
 import { delimiter, dirname, join } from 'node:path';
+import { setTimeout as wait } from 'node:timers/promises';
 import { mock, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import type { McpServer } from './launch.ts';
-import postgres from 'postgres';
 import {
   L,
   PATCH,
@@ -64,6 +65,7 @@ const { agentCommand } = await import('./agent-sign-in.ts');
 const { configServers } = await import('./launch.ts');
 const { LAUNCHES } = await import('./cli.ts');
 const { deniedEdits } = await import('./files.ts');
+const { grokLaunch } = await import('./grok.ts');
 // The model an Odd with none of its own runs on each tool, which the picker sends for its Office default card.
 const { shownOfficeModel } = await import('./claude.ts');
 
@@ -257,7 +259,7 @@ test('a run stuck before its tool starts ends at its time limit, saying where it
   // Opening the run's tools reads the Odd's lessons: a lock on them holds the
   // run while it gets ready, as a hung database or embedding once held a chat.
   // On a connection of its own, since the held run takes the ledger's.
-  const pg = postgres(process.env.DATABASE_URL!, { max: 2, onnotice: () => {} });
+  const pg = L.openPool(L.DATABASE_URL, { max: 2, onnotice: () => {} });
   const lock = await pg.reserve();
   const events: { type: string; message?: string }[] = [];
   try {
@@ -413,7 +415,7 @@ test("a Grok Odd's chat on a Mac starts grok sandboxed in its own folder, with n
     }
   });
   assert.deepEqual(Object.keys(run.servers ?? {}), ['office', 'files']);
-  const shown = plain(run.args).map((a) => a.replace(/^(--single|--rules)=[^]*$/, '$1=<$1>'));
+  const shown = plain(run.args);
   // The instruction files are pinned below; the rest is compared whole, so a
   // repository's hooks or config in its own folder, which no rule refuses, would show there.
   const own = (a: string) =>
@@ -430,7 +432,9 @@ test("a Grok Odd's chat on a Mac starts grok sandboxed in its own folder, with n
   assert.deepEqual(
     shown.filter((a, i) => !own(a) && !own(shown[i + 1] ?? '')),
     [
-      '--single=<--single>',
+      // The message in a file, and the system prompt in the agent file, never on the command line.
+      '--prompt-file',
+      '<home>/accounts/grok/office/runs/<id>.prompt.txt',
       '--output-format',
       'streaming-messages-json',
       '--include-partial-messages',
@@ -474,7 +478,6 @@ test("a Grok Odd's chat on a Mac starts grok sandboxed in its own folder, with n
       'MCPTool(office__*)',
       '--allow',
       'MCPTool(files__*)',
-      '--rules=<--rules>',
       '-s',
       '<id>'
     ]
@@ -680,22 +683,83 @@ test("Grok's MCP calls reach the floor by the tool they name, once each", async 
   assert.deepEqual((await chatOf('gus')).tools, ['mcp__office__raise_ask']);
 });
 
-test("a Grok run's servers come from an agent file only the owner reads, which goes when the run ends", async () => {
+test("a Grok run's servers and system prompt come from an agent file, and its message from a file, only the owner reads, which go when the run ends", async () => {
   const run = await chatOf('gus');
   assert.equal(run.agentMode, 0o600);
+  assert.equal(run.promptFileMode, 0o600);
+  // Added to Grok's own prompt, as --rules added it.
+  assert.equal(run.promptMode, 'extend');
+  assert.match(run.system, /^You are Gus\./);
   assert.ok(run.env.RUN_KEY, 'the tool server got no key');
   assert.deepEqual(readdirSync(join(folder, 'accounts', 'grok', 'office', 'runs')), []);
+});
+
+test("on Windows, a Grok run's long message, its system prompt and a picture stay off its command line, which holds 32,767 characters", async () => {
+  // Windows quotes each argument and parts them with a space.
+  const length = (args: string[]) => args.reduce((n, a) => n + a.length + 3, 0);
+  // The --deny and --allow rules stay on the command line: Grok takes them from
+  // no per-run file. Everything else fits in a few thousand characters.
+  const rule = (a: string, i: number, all: string[]) =>
+    ['--deny', '--allow'].includes(a) || ['--deny', '--allow'].includes(all[i - 1]);
+  const fits = (args: string[]) => {
+    const rest = args.filter((a, i) => !rule(a, i, args));
+    assert.ok(length(rest) < 4_000, `besides its rules, the command line takes ${length(rest)}`);
+    assert.ok(length(args) < 32_767, `the command line takes ${length(args)} characters`);
+  };
+  const message = 'Count every chair in the hall. '.repeat(1_300);
+  assert.ok(message.length > 40_000);
+  const run = await onWindows(() => chatOf('gus', message));
+  fits(run.args);
+  assert.ok(run.message.endsWith(message), 'the message did not reach Grok whole');
+  assert.match(run.system, /^You are Gus\./);
+
+  // An office run's picture, 100 KB, goes in the message's .json file too.
+  const picture = join(folder, 'big-picture.png');
+  writeFileSync(picture, randomBytes(100_000));
+  const launch = await onWindows(() =>
+    grokLaunch({
+      key: randomUUID(),
+      account: L.OFFICE_ACCOUNT,
+      staffId: 'office',
+      dir: folder,
+      reads: [],
+      writes: [folder],
+      deniedEdits: [],
+      system: 'Draw what is asked. '.repeat(1_000),
+      message: 'Draw a desk.',
+      newSession: randomUUID(),
+      servers: {},
+      allowed: [],
+      web: false,
+      images: [{ path: picture, mediaType: 'image/png' }],
+      bare: true
+    })
+  );
+  try {
+    fits(launch.args);
+    const file = launch.args[launch.args.indexOf('--prompt-file') + 1];
+    assert.ok(file.endsWith('.prompt.json'), file);
+    const blocks = JSON.parse(readFileSync(file, 'utf8')) as { data?: string; text?: string }[];
+    assert.equal(blocks[0].data, readFileSync(picture).toString('base64'));
+    assert.equal(blocks[1].text, 'Draw a desk.');
+  } finally {
+    launch.done();
+    rmSync(picture);
+  }
 });
 
 test("the office's Grok home is the owner's alone, and an agent file a run that died with the office left goes at the next run", async () => {
   const grok = join(folder, 'accounts', 'grok', 'office');
   const stale = join(grok, 'runs', 'died-with-the-office.md');
+  const message = join(grok, 'runs', 'died-with-the-office.prompt.json');
   mkdirSync(join(grok, 'runs'), { recursive: true });
   writeFileSync(stale, '---\nmcpServers: []\n---\n');
+  writeFileSync(message, '[]');
   chmodSync(grok, 0o755);
   await chatOf('gus');
   assert.equal(statSync(grok).mode & 0o777, 0o700);
   assert.ok(!existsSync(stale), 'the dead run left its agent file, secrets and all');
+  assert.ok(!existsSync(message), 'the dead run left its message');
 });
 
 test('the office keeps a config.toml it did not write, and writes one only into a home with none', async () => {
@@ -731,8 +795,14 @@ test("a Grok Odd's run on a thread reads the thread's folder and writes only its
     `read_write = ${JSON.stringify([join(folder, 'accounts', 'grok', 'office', 'tmp'), part])}`
   ]);
   // The kernel shuts what `strict` reads that no Odd needs, by its real path.
-  for (const p of [join(homedir(), 'Library'), '/Library', '/tmp', '/var'].filter(existsSync))
+  // On Linux /tmp and /var stay open: Grok cannot start with either shut (`grokShut`).
+  const linux = process.platform === 'linux';
+  const shut = [join(homedir(), 'Library'), '/Library', ...(linux ? [] : ['/tmp', '/var'])];
+  for (const p of shut.filter(existsSync))
     assert.ok(run.profile?.includes(JSON.stringify(`${realpathSync(p)}/**`)), `${p} is not shut`);
+  if (linux)
+    for (const p of ['/tmp', '/var'])
+      assert.ok(!run.profile?.includes(JSON.stringify(`${p}/**`)), `${p} is shut on Linux`);
   assert.ok(
     run.profile?.includes(JSON.stringify(`${part}/**/.grok`)),
     'a planted .grok is not denied'
@@ -884,29 +954,35 @@ test('Grok runs starting together share one renewal of their sign-in', async () 
   });
 });
 
-test('a renewal that hangs and ignores SIGTERM is killed at 30 seconds, and the run goes on', async () => {
+test('a renewal that hangs and ignores SIGTERM is killed at 30 seconds, and the run goes on', async (t) => {
   const { grokSignedOut } = await import('./grok.ts');
   const hang = join(folder, 'accounts', 'grok', 'office', 'hang.pid');
   // 0 until grok models starts; process.kill reads 0 as this whole process group.
   const pid = () => Number(readFileSync(hang, 'utf8'));
   await withGrokSignIn({ auth: 12 * 60_000 }, async () => {
     writeFileSync(hang, '');
-    let timer: NodeJS.Timeout | undefined;
+    // The office's 30 seconds pass on a mock clock, while grok models runs
+    // for real. The test's own waits are timers/promises, which stays real.
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    let ended = false;
+    const renewal = grokSignedOut(5 * 60_000).finally(() => (ended = true));
     try {
-      const started = Date.now();
-      const ended = await Promise.race([
-        grokSignedOut(5 * 60_000).then((refused) => ({ refused })),
-        new Promise<false>((stop) => (timer = setTimeout(() => stop(false), 40_000)))
-      ]);
-      const took = Date.now() - started;
-      assert.ok(ended, 'the renewal was still going at 40 seconds');
-      // The sign-in still has 12 minutes, so the killed renewal refuses nothing.
-      assert.equal(ended.refused, undefined, 'the run was refused after its renewal was killed');
-      assert.ok(took >= 29_000 && took < 35_000, `the renewal ended after ${took} ms`);
+      for (let i = 0; i < 500 && !(pid() > 0); i++) await wait(20);
       assert.ok(pid() > 0, 'grok models never started');
+      t.mock.timers.tick(29_999);
+      // Long enough for a killed grok models to be heard closing.
+      await wait(500);
+      assert.equal(ended, false, 'the renewal ended before 30 seconds');
+      t.mock.timers.tick(1);
+      const result = await Promise.race([
+        renewal.then((refused) => ({ refused })),
+        wait(10_000, undefined, { ref: false })
+      ]);
+      assert.ok(result, 'the renewal was still going 10 seconds after its 30');
+      // The sign-in still has 12 minutes, so the killed renewal refuses nothing.
+      assert.equal(result.refused, undefined, 'the run was refused after its renewal was killed');
       assert.throws(() => process.kill(pid(), 0), { code: 'ESRCH' }, 'grok models still runs');
     } finally {
-      clearTimeout(timer);
       try {
         if (pid() > 0) process.kill(pid(), 'SIGKILL');
       } catch {

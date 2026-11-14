@@ -13,13 +13,16 @@ check that catches a missed place: `docs/architecture.md`.
 `vite build` leaves `@oddboro/*` out of the server build (a Rolldown external
 in `vite.config.ts`), so each package finds its own files beside its code and
 the app ships them whole (`apps/desktop/scripts/stage.ts`). In the app
-(`ODDBORO_APP=1`) `hooks.server.ts` quits on SIGTERM and when stdin closes.
+(`ODDBORO_APP=1`) `hooks.server.ts` quits on SIGTERM and when stdin closes,
+and reads the app's key from stdin first (see "Who the office answers").
 
 What the office says about itself, for the app's log and its smoke test
 (`apps/desktop/CLAUDE.md`, "Smoke tests"). `init` writes an `office:` line
-with the version and system, one per startup step with its time (secrets,
-database, tables, update row) and `office: ready N ms after Node started`;
-a new version's first start writes `office: first start of X after Y`
+with the version and system, one per startup step with its time (the key in
+the app, secrets, database, tables, update row) and `office: ready N ms after Node started`;
+in the app, each time a request computes the setup checks, one
+`office: setup <id> ok` or `fail` line per check (the id and result alone,
+`logSetup`); a new version's first start writes `office: first start of X after Y`
 (`backup.ts` in the ledger). `GET /api/health` serves the same: version,
 pid, uptime, step times, how many pages hold the live line and how many page
 errors came in (`src/lib/server/health.ts`). The page reports its boot and
@@ -243,9 +246,11 @@ pieces under 3,900 bytes a line, so no value is on a command line.
    Settings tab does. A `level` ask (an Odd's `ask_for_level`) takes Raise to
    and the level it names ("Raise to Act"), and an `office_tool` ask (an
    Odd's `ask_for_office_tool`) takes Turn on; each approves it and makes the
-   Settings tab's own change for that Odd in one step. Each kind's yes button
-   words live in `src/lib/ui/yes-said.ts` (`YES_SAID`), which the Desk
-   imports and `yes-said.test.ts` holds. A `remove` ask (an Odd's `leave_office`, or the
+   Settings tab's own change for that Odd in one step. A `standing` ask (an
+   Odd's `ask_for_standing_yes`) takes Allow or Deny and no Iterate, and Allow
+   puts the tools on the grant. Each kind's yes button words live in
+   `src/lib/ui/yes-said.ts` (`YES_SAID`), which the Desk imports and
+   `yes-said.test.ts` holds. A `remove` ask (an Odd's `leave_office`, or the
    manager's `remove_odd`) takes Remove, and a `bring_back` ask (the
    manager's `bring_back_odd`) takes Bring back; both take Deny and no
    Iterate. An item a lead raised from a colleague's
@@ -501,8 +506,7 @@ pieces under 3,900 bytes a line, so no value is on a command line.
    Its input grows with the text
    up to 60% of the chat, and the bar above it drags it taller; that height is
    remembered per viewer. Every run's system prompt opens with "Who you work
-   for" (`whoFor` in `staff.ts`): the owner, `data/people.json` when it
-   exists, the Odd's own `notes/intake.md` when it has one, and the active
+   for" (`whoFor` in `staff.ts`): the owner, the Odd's own `notes/intake.md` when it has one, and the active
    goals it serves with its part and the latest progress. An Odd sees only
    the goals it serves. Every run's "How the office works" (`house` in
    `src/lib/server/house.ts`) holds the rules every run keeps, whatever it is
@@ -592,14 +596,15 @@ pieces under 3,900 bytes a line, so no value is on a command line.
    split from `OFFICE_TOOLS` by `toolGroups` in `src/lib/ui/tool-groups.ts`,
    and filtered by the same search); Folders
    (`FoldersList.svelte`) lists each folder with Can read and Can write side
-   by side; Services holds the outside tools, each with Read only and Read and write side by side, changed in place (`setGrantLevel`, PATCH on the access route): the tool stays signed in, and only Revoke forgets it. Choose a folder asks
+   by side; Services holds the outside tools, each with Read only and Read and write side by side, changed in place (`setGrantLevel`, PATCH on the access route): the tool stays signed in, and only Revoke (the trash can) forgets it, after Confirm in place of the row. Refresh beside it reads the service's tools now and says what changed. Actions (n), shut until opened, reads them too as it opens, saying only what changed, and lists every tool the grant reaches, those that change something first (`tools` from the access route), each with what it does in the service's own words (`connectors.toolNotes`, kept current with the rest of the stored tools, `refreshTools`). Each of those has Ask first and Without asking, with the Odd's level as the default: at Draft, Without asking lets the Odd call it with no desk item (PATCH with `tool` and `standing`, `setStanding` in the ledger); at Act, Ask first puts each call to it on the desk (PATCH with `tool` and `askFirst`, `setAskFirst`, and the gateway's `waitsFor`). A tool that only reads says so. Choose a folder asks
    `/api/folders/pick`, which opens the system's own picker on this computer
    (`src/lib/server/folder-picker.ts`: AppleScript on a Mac, PowerShell's
    Forms dialog on Windows, zenity or kdialog on Linux), one at a time; a
    cancel picks nothing, and where none can open the page says why and keeps
    the typed path. A picked folder starts at Can read and goes through the
-   same PATCH and `checkFolder` as a typed one. Each service there has
-   Rename, and an AWS tool already connected has Change role or Region
+   same PATCH and `checkFolder` as a typed one. Each service's name there
+   has a pencil that edits it in place, Enter or Save to keep and Escape to
+   drop (`ServiceName.svelte`), and an AWS tool already connected has Change role or Region
    (`ServiceActions.svelte`, `/api/services/[id]`), which puts its AWS step
    on the desk again from the office (`changeAwsTask`) and opens it. Under a
    grant the Odd's level does not allow, a line says so, with one click that
@@ -694,7 +699,7 @@ pieces under 3,900 bytes a line, so no value is on a command line.
    work it leads or is on, in the Odd's own profile), the owner's data folder, the
    folders the owner gave it and the tool server's code, writes the given
    folders it may change (`readWrite`), and
-   shuts `~/Library`, `/Library`, `/tmp` and `/var`; Windows has none. Grok
+   shuts `~/Library`, `/Library`, and on a Mac `/tmp` and `/var` (Linux leaves those two open: Grok cannot start with either shut); Windows has none. Grok
    refuses every sandbox when `/var/run/docker.sock` is a link to a path off
    its own list (OrbStack, Colima, Rancher Desktop), so then the run gets a
    home of its own in Grok's home, whose `.docker/run` leads to the socket's
@@ -724,7 +729,10 @@ pieces under 3,900 bytes a line, so no value is on a command line.
    (`codex-tmp/<run key>`) written, instruction files and the edited file
    never, and no network, Browse the web or not (`network` in the profile,
    from `commandsOnline`: with it on, Codex's commands reached the office's own
-   API and database on this Mac). The office carries its files
+   API and database on this Mac). On Linux Codex itself mounts `.codex` and
+   `.agents` read only at the top of each write folder, so those two exact paths
+   are left to it (`SELF_SHUT`), and no run reads an `AGENTS.md`
+   (`project_doc_max_bytes`), since a shut one failed the run's start. The office carries its files
    (`FILES_VIA_OFFICE`), so with Run commands off it has no shell. On Windows
    it never has one: Codex's own sandbox opened every Odd's folder to reads,
    so a run there is in Codex's read-only mode and Run commands stays locked
@@ -968,8 +976,13 @@ pieces under 3,900 bytes a line, so no value is on a command line.
    `access.ts`, which starts a command's server with only the names a run
    may have, `outsideToolEnv` in `run-env-allow.ts`, and its own secrets),
    lists only the tools the grant reaches, refuses any other
-   call, and takes a tool that no longer passes `readsOnly` off the
-   connector's stored list with a Ledger line (`narrowReadTools`). A connector
+   call, and keeps the connector's stored tools in step with the list it got
+   (`refreshTools` in the ledger): new and dropped tools, Read only's reach
+   both ways, each tool's description, and a dropped or redescribed tool off each standing
+   yes, each change but a description with a Ledger line. The office does the
+   same when the owner opens a service's Actions on the Settings tab, and on
+   their Refresh (`/api/services/[id]/tools`, `refreshService`), never on a
+   timer. A connector
    that cannot start during a run gets one Ledger line naming it, per run, in
    the office's own words for why and never the error's text, which can repeat
    a key (`whyNoStart`); the run still gets the error itself. A write
@@ -978,8 +991,19 @@ pieces under 3,900 bytes a line, so no value is on a command line.
    not pass `readsOnly` (or `readsByRole`) as a `call` ask on the desk
    (`raiseCall`), placed as the run's own asks are (`CallPlace`: its key,
    thread, hand-off and `via`); the same call still open is not raised twice,
-   and a lesson run, with no place, is refused one. The run hears that nothing
-   changed yet. The desk shows the tool and its exact inputs, with Make this
+   and a lesson run, with no place, is refused one. Each tool that changes
+   something is listed with a required `oddboro_title` and `oddboro_why`, the
+   Odd's short title and reason for the owner, which the gateway takes out of
+   the call and the desk shows as the ask's title (after the service's name,
+   unless the office reads one from the call, as for Gmail) and under Why; a
+   call without both is refused and holds nothing. The run hears that
+   nothing changed yet. A tool the Odd uses without asking (`grants.standing`,
+   the ledger's `standing.ts`) goes straight through in any run with a place,
+   is listed without the two fields, and each such call rides on the run's
+   next held call to that service (`before`), which the desk lists as "Made
+   without asking before this call", so a commit shows what it applies.
+   Each held call takes only the calls since the run's last one. The
+   desk shows the tool and its exact inputs, with Make this
    call: `/api/asks/[id]/call` makes that call itself (`makeCall`, once per
    ask even on a second click), then `approveCall` keeps the result and
    starts the Odd's `carry_out` run, which carries on with what it returned.
@@ -1073,7 +1097,8 @@ pieces under 3,900 bytes a line, so no value is on a command line.
 11. The job clock (`src/lib/server/jobs.ts`, started from `hooks.server.ts`)
     keeps one timer for the soonest due job, poke or parked thread, resets on
     any change to the jobs, pokes or threads table, and looks at the time at least every ten minutes because macOS
-    stops timers in sleep. A run's result goes in the ledger, and on the owner's
+    stops timers in sleep. A look that fails, as when the database does not
+    answer, is logged and tried again in 30 seconds. A run's result goes in the ledger, and on the owner's
     desk as a report when the job says so. Each run records its trigger:
     `schedule` when the timer started it, `manual` when the owner pressed Run now.
     `job-run.ts` uses the shared runner and live slots.
@@ -1117,11 +1142,12 @@ pieces under 3,900 bytes a line, so no value is on a command line.
     job on time never waits for it. A catch-up shows in In progress as
     "Catching up <N> periods of <job>". The job form sets the kind ("When the
     office was off at run time"). To try it in a running office, move a
-    job's next run into the past from the repo, with that office's database
-    port. The write wakes the clock at once.
+    job's next run into the past from the repo, with that office's home
+    (on Windows, its database port in `ODDBORO_DB_PORT` too). The write wakes
+    the clock at once.
 
     ```sh
-    ODDBORO_DB_PORT=<port> node --input-type=module <<'EOF'
+    ODDBORO_HOME=<home> node --input-type=module <<'EOF'
     import { pg } from '@oddboro/ledger';
     await pg`update jobs set next_run_at = now() - interval '2 days 45 minutes' where name = '<job>'`;
     await pg.end();
@@ -1307,8 +1333,10 @@ pieces under 3,900 bytes a line, so no value is on a command line.
 
 17. **Updates.** The shell (`apps/desktop`) finds, downloads and checks a
     new version, then tells the server through `/api/update`
-    (`src/lib/server/update.ts`). Only the shell may report one: from
-    127.0.0.1 with the `ODDBORO_UPDATE_TOKEN` it passed in. The office picks
+    (`src/lib/server/update.ts`). Only the shell may report one: from this
+    computer (rule 1 of "Who the office answers") with the app's key in its
+    header (`fromShell` in `src/lib/server/app-key.ts`). A release build
+    passes `ODDBORO_UPDATES=1`, which shows Check now. The office picks
     `installAt`: the start of the owner's next window (02:00 to 04:00 office
     time by default, `app_update` in the ledger), or now when the owner presses
     Install now. The rules are in `@oddboro/ledger/update-window`. From 15
@@ -1507,33 +1535,102 @@ address when it answers and is trusted.
 ## Who the office answers
 
 Other pages open in the owner's browser can send requests to the office too,
-so `guardOffice` (`src/lib/server/owner-page.ts`, the first step of the
-server's `handle` in `hooks.server.ts`, before Sentry's) checks every route
-and API request before the route sees it, in every mode. Files built into the
-page (scripts, styles, images) are served before the check. SvelteKit's own
-check stays on as well, for form posts and any action with no content type.
-In a release, whose port moves, the adapter takes the office's origin to be
-https, so that check refuses the owner's own http page. So the page's `call()`
+and so can any program on the owner's computer, so `guardOffice`
+(`src/lib/server/owner-page.ts`, the first step of the server's `handle` in
+`hooks.server.ts`, before Sentry's) checks every route and API request before
+the route sees it, in every mode. Files built into the page (scripts, styles,
+images, under `/_app/`) are served before the check. SvelteKit's own check
+stays on as well, for form posts and any action with no content type. In a
+release, whose port moves, the adapter takes the office's origin to be https,
+so that check refuses the owner's own http page. So the page's `call()`
 (`src/lib/ui/api.ts`) sends every action as JSON, body or not.
 
-1. The Host must be one of the office's names, whatever the port: 127.0.0.1,
+In the desktop app (`ODDBORO_APP`), before the rules below, every request
+must carry the app's key (`src/lib/server/app-key.ts`). Anything without it
+gets 403 and "This office opens only in the Oddboro app. Open Oddboro to see
+it.", reads too, which a browser shows as a plain page.
+
+- The shell makes a fresh key every time it starts Node: 32 bytes from the
+  system's random source, held only in its memory
+  (`apps/desktop/src-tauri/src/key.rs`). Node reads it as the first line on
+  its stdin (`readKey`, from `hooks.server.ts`, which waits for it after
+  making the home private and before the secrets and the database). It is
+  never in a file, the Keychain, the environment, a command line, a URL or a
+  log line: any program running as the owner can read another's environment
+  and command line (`ps -E`). A key that leaks after its Node is gone opens
+  nothing.
+- Before the shell trusts the server on the port, at the first start and
+  every restart, the server proves it holds the key: `GET /api/proof?nonce=`
+  with a fresh nonce of 64 hex digits, answered with HMAC-SHA256 under the
+  key of `oddboro-proof:` and the nonce (`proof`). The route passes the guard
+  without the key, as a GET, and answers nothing but that shape. The label
+  keeps the answer good for nothing else, and it says nothing of the key. A
+  program that took the port cannot answer it, so the window never sends it
+  the cookie.
+- The window carries it in a cookie, `oddboro-key`: HttpOnly, so no page
+  script reads it, SameSite=Strict, and with no expiry, so it ends with the
+  app and the webview never writes it to disk. The shell sets it, after the
+  proof, before the window asks the office for anything, and sets the new
+  start's cookie before the window reloads after a restart. Every request the page makes carries
+  it: `fetch`, the live line (`/api/events`), pictures and music.
+- A cookie names a host but no port, so a picture in an Odd's reply at
+  another port on 127.0.0.1 would carry the key to whatever listens there.
+  The window's pages therefore get a policy (`WINDOW_CSP`): pictures, sound,
+  fonts, frames and connections only from the office itself, `data:`,
+  `blob:` and https.
+- The shell's own requests (`/api/update`, `/api/browser-link`) carry it in
+  the `X-Oddboro-Key` header. That header counts there and nowhere else.
+- Without the key, only these get in: the sign-in callbacks (rule 5), as
+  GETs to those two exact paths; the shell's proof request; a run's call to
+  its gateway with its token; and a link for the owner's browser.
+- The owner's browser has no key. When the window opens an office address in
+  a new window (a file attached in a chat), the shell asks
+  `POST /api/browser-link` for a code for that path and opens the address
+  with `?oddboro-link=<code>`. The code works once, for that path only, as a
+  GET, within a minute (`mintLink`, `takeLink`). Open in browser for a page
+  an Odd built opens the file itself, not an office address, so it needs none.
+
+An office run from source (`npm run dev`, `npm run setup`, the login
+service, the tests) has no key and keeps the rules below alone.
+
+1. The request must come from this computer (`fromThisComputer`): the
+   connection's address and every address in X-Forwarded-For are loopback
+   (127.0.0.0/8, ::1, or ::ffff:127.x), and anything else, an entry that is
+   not a plain address included, gets 403, reads too. Through Caddy the
+   connection is always from 127.0.0.1, and Caddy writes the client it served
+   into that header and drops one the client sent, or adds the real address
+   last when it trusts the client, so this is what keeps another machine on
+   the network out. A program on this computer can write the header too; this
+   rule is not for that. The built server serves the files built into the
+   page before it. Under `vite dev`, which setup and the login service run,
+   the same rule (`src/lib/server/this-computer.ts`) runs first in
+   `onlyThisComputer` (rule 6), so Vite's own routes and its live-reload
+   websocket refuse another machine too.
+2. The Host must be one of the office's names, whatever the port: 127.0.0.1,
    [::1], localhost, the addresses through Caddy (`HOSTS` in
    `src/lib/server/hosts.ts`) and the app's `ORIGIN`. A site that points its
    own name at 127.0.0.1 looks same-origin to the browser, so only the name
    gives it away. A route asked by any other name gets 403.
-2. Anything but GET, HEAD and OPTIONS must come from the owner's page
+3. Anything but GET, HEAD and OPTIONS must come from the owner's page
    (`fromOwnerPage`): Sec-Fetch-Site says same-origin, or, with none, the
    Origin names the Host asked, whatever the scheme, since through Caddy the
    page is https and the office http. With neither, 403.
-3. The one other client is the app's shell, which reports updates to
-   `/api/update` with the token it passed the server (`fromShell` in
-   `src/lib/server/update.ts`).
-4. `/account/callback` and `/connect/callback` arrive as GETs from the
+4. The other clients are the app's shell, which reports updates to
+   `/api/update` and asks for browser links at `/api/browser-link` with the
+   app's key in its header (`fromShell` in `src/lib/server/app-key.ts`), and
+   an Odd's run, which calls `/api/gateway/<connector>` with its token
+   (`fromRun` in `src/lib/server/gateway.ts`).
+5. `/account/callback` and `/connect/callback` arrive as GETs from the
    owner's browser, sent back by the service's sign-in page, so they pass
-   rule 2 with no Origin.
-5. Vite's dev server has its own route, `/__open-in-editor`, that opens a file
-   in an editor and runs before the handle. `noEditorLaunch` in
-   `vite.config.ts` refuses it with 403, always: nothing in the office uses it.
+   rule 3 with no Origin, and in the app they pass without the key. Each
+   finishes only a sign-in whose state the office made and has not spent
+   (`claimSignIn` in `account.ts`, `finishSignIn` in `oauth.ts`).
+6. Vite's dev server answers before the handle. `onlyThisComputer` in
+   `vite.config.ts`, the first plugin, asks rule 1 before Vite's routes and
+   its websocket: another machine gets 403, and its websocket is closed.
+   Vite also has its own route, `/__open-in-editor`, that opens a file in an
+   editor. `noEditorLaunch` refuses it with 403, always, this computer
+   included: nothing in the office uses it.
 
 ## Diagnostics
 
@@ -1704,7 +1801,10 @@ the persona's voice.
    sends the owner's words and the hands' report, cut to fit 4,000
    characters, to `<issuer>/<slug>/stream`. A chat sends its earlier answered
    exchanges and keeps the door's session in the Odd's folder. Any answer but
-   `answered` returns a one-line note and the report, so no work is lost. A
+   `answered` fails the run with a one-line note and the report, so no work
+   is lost and nothing counts as done without the persona: a follow-up drops
+   the hands' Outcome line, and a chat shows no sign-in card (the persona's
+   access is its own, item 5). Stop cancels the call to the door. An answered
    follow-up keeps the hands' Outcome line after the voice. Every other
    run, such as a draft or a follow-up that reads the owner's no or edit
    for a lesson, stays with the hands. Every word sent to the door is in

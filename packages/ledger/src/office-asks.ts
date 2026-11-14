@@ -15,7 +15,8 @@ import {
   type HireProposal,
   type InChat,
   type HeldCall,
-  type ReplyDraft
+  type ReplyDraft,
+  type StandingRequest
 } from './schema.ts';
 import { levelAtMost, switchesSaid, type Level, type OwnSwitch } from './access-words.ts';
 import { type OfficeToolId } from './tools.ts';
@@ -233,6 +234,29 @@ async function refuseSecondSwitch(
     );
 }
 
+/** A standing ask for tools an open one already covers: the open one is the ask. */
+async function refuseSecondStanding(
+  tx: Tx,
+  staffId: string,
+  want: StandingRequest,
+  revises?: number
+): Promise<void> {
+  const open = await tx
+    .select()
+    .from(asks)
+    .where(and(eq(asks.staffId, staffId), eq(asks.kind, 'standing'), eq(asks.status, 'open')));
+  const same = open.find(
+    (r) =>
+      r.id !== revises &&
+      r.standing?.connector === want.connector &&
+      want.tools.every((t) => r.standing!.tools.includes(t))
+  );
+  if (same)
+    throw new AlreadyOnDesk(
+      `Your ask #${same.id} to use ${(same.standing?.tools ?? []).join(', ')} without asking is already there.`
+    );
+}
+
 export async function raiseAsk(
   staffId: string,
   a: {
@@ -259,6 +283,8 @@ export async function raiseAsk(
     call?: HeldCall;
     /** A remove or bring_back ask's Odd (leaving.ts). */
     odd?: string;
+    /** A standing ask's tools (`ask_for_standing_yes`, standing.ts). */
+    standing?: StandingRequest;
     /** Every kind but these says so; `approval`, `access` and `hire` follow from access or hire, and the office raises `hand_offs`, `window` and `catch_up` itself. */
     kind?: Exclude<AskKind, 'approval' | 'access' | 'hire' | 'hand_offs' | 'window' | 'catch_up'>;
     revises?: number;
@@ -283,7 +309,7 @@ export async function raiseAsk(
   const ask = await db.transaction(async (tx) => {
     // An Odd's own ask may not repeat one on the desk, a reply may not
     // answer an email twice, and a filter may not file the same mail twice.
-    // A folder or switch ask may not repeat one from the same place. Access,
+    // A folder, switch or standing ask may not repeat one from the same place. Access,
     // level and office tool asks have twins instead (`asksNoMore`), and the rest are the office's
     // own or checked where they are made. The office raises `hand_offs`,
     // `window` and `catch_up` asks itself, never through here. A new kind fails the type
@@ -315,6 +341,11 @@ export async function raiseAsk(
         if (!a.switches) break;
         await lockDesk(tx, staffId);
         await refuseSecondSwitch(tx, staffId, { ...a, switches: a.switches });
+        break;
+      case 'standing':
+        if (!a.standing) break;
+        await lockDesk(tx, staffId);
+        await refuseSecondStanding(tx, staffId, a.standing, a.revises);
         break;
       case 'access':
       case 'level':
@@ -450,7 +481,8 @@ const TWINS = {
   call: null,
   remove: null,
   bring_back: null,
-  catch_up: null
+  catch_up: null,
+  standing: null
 } satisfies Record<AskKind, Twin | null>;
 
 /**

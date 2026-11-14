@@ -1,5 +1,5 @@
 {
-  "id": "4406e483-18bd-49b6-87ee-8535ae8bc338",
+  "id": "089406c6-170a-4f23-baae-7fe08c116ade",
   "prevId": "71f8f9d0-ad3c-4b0d-b7d4-987615add55e",
   "version": "7",
   "dialect": "postgresql",
@@ -315,6 +315,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "standing": {
+          "name": "standing",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
         "revises": {
           "name": "revises",
           "type": "integer",
@@ -368,18 +374,6 @@
         "decided_at": {
           "name": "decided_at",
           "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "level": {
-          "name": "level",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "office_tools": {
-          "name": "office_tools",
-          "type": "text[]",
           "primaryKey": false,
           "notNull": false
         }
@@ -587,6 +581,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'{}'"
+        },
+        "tool_notes": {
+          "name": "tool_notes",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::jsonb"
         },
         "ready_at": {
           "name": "ready_at",
@@ -1051,6 +1052,20 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'read'"
+        },
+        "standing": {
+          "name": "standing",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'"
+        },
+        "ask_first": {
+          "name": "ask_first",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'"
         },
         "ask_id": {
           "name": "ask_id",
