@@ -320,7 +320,7 @@ tool(
 tool(
   'ask_for_level',
   {
-    description: `Ask ${OWNER} to raise your level when a job needs more than it lets you do. Draft: you prepare changes outside the office, and each waits for their yes. Act: you use a tool they connected for you at read and write without asking each time. Ask with this instead of giving ${OWNER} steps for your ${SETTINGS_TAB} tab: they raise it with one click. Ask for the lowest level the work needs. Your own runs work at it from their yes on; work a colleague hands you still runs at Draft at most. my_access says your level.${raisedNote}`,
+    description: `Ask ${OWNER} to raise your level when your work keeps needing more than it lets you do. Draft: you prepare changes outside the office, and each waits for their yes. Act: you use a tool they connected for you at read and write without asking each time, from their yes until they lower it. For a single change, do not ask for Act: at Draft, prepare it so it waits for their yes, or ask for that one action with raise_ask. Ask for Act only for changes that repeat, where a yes for each would be a chore. Ask with this instead of giving ${OWNER} steps for your ${SETTINGS_TAB} tab: they raise it with one click. Ask for the lowest level the work needs. Work a colleague hands you still runs at Draft at most. my_access says your level.${raisedNote}`,
     inputSchema: {
       level: z.enum(LEVELS).describe('The level the work needs.'),
       why: z.string().max(1000).describe('What work needs it, in one or two plain sentences.'),
@@ -347,7 +347,7 @@ tool(
       kind: 'level',
       title: `Raise ${now.name} from ${LEVEL_NAME[now.permission]} to ${LEVEL_NAME[level]}`,
       why,
-      ifApproved: `The office raises ${now.name} from ${LEVEL_NAME[now.permission]} to ${LEVEL_NAME[level]}, as the ${SETTINGS_TAB} tab does, and ${now.name} picks up the work with it. ${AT_LEVEL[level](now.name)}`,
+      ifApproved: `The office raises ${now.name} from ${LEVEL_NAME[now.permission]} to ${LEVEL_NAME[level]}, as the ${SETTINGS_TAB} tab does, and ${now.name} picks up the work with it. ${AT_LEVEL[level](now.name)} ${now.name} stays at ${LEVEL_NAME[level]} until you lower it in the ${SETTINGS_TAB} tab.`,
       level,
       revises,
       via: VIA

@@ -137,7 +137,7 @@ test('an Odd asks for a higher level in one call, and is refused one it already 
   assert.equal(a.title, 'Raise Sage from Draft to Act');
   assert.equal(
     a.ifApproved,
-    "The office raises Sage from Draft to Act, as the Settings tab does, and Sage picks up the work with it. At Act, Sage uses the tools you connected for Sage at read and write without asking you first, in chats with you, in Sage's jobs and in work you approve. Work a colleague hands Sage, and a thread Sage picks back up, still runs at Draft: each change there waits for your yes."
+    "The office raises Sage from Draft to Act, as the Settings tab does, and Sage picks up the work with it. At Act, Sage uses the tools you connected for Sage at read and write without asking you first, in chats with you, in Sage's jobs and in work you approve. Work a colleague hands Sage, and a thread Sage picks back up, still runs at Draft: each change there waits for your yes. Sage stays at Act until you lower it in the Settings tab."
   );
   const held = await call(c, 'ask_for_level', { level: 'draft', why: 'Again.' });
   assert.equal(held.error, true);
@@ -153,7 +153,7 @@ test('an Odd at Read asking for Draft tells the owner what Draft lets it do', as
   assert.equal(a.title, 'Raise Ada from Read to Draft');
   assert.equal(
     a.ifApproved,
-    'The office raises Ada from Read to Draft, as the Settings tab does, and Ada picks up the work with it. At Draft, Ada prepares changes outside the office, and each one waits for your yes.'
+    'The office raises Ada from Read to Draft, as the Settings tab does, and Ada picks up the work with it. At Draft, Ada prepares changes outside the office, and each one waits for your yes. Ada stays at Draft until you lower it in the Settings tab.'
   );
 });
 
